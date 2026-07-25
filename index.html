@@ -90,6 +90,20 @@ canvas{width:100%;display:block;}
 .jentry .jt{font-size:13px;line-height:1.7;white-space:pre-wrap;}
 .jentry .del{color:var(--faint);cursor:pointer;font-size:11px;}
 .jentry .del:hover{color:var(--red);}
+/* advisor page */
+.adv-hero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;}
+.adv-hero .t{font-size:15px;font-weight:700;}
+.adv-hero .d{font-size:12px;color:var(--dim);margin-top:4px;line-height:1.6;max-width:520px;}
+.gauge-wrap{min-width:200px;}
+.gauge-bar{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;margin:8px 0 6px;}
+.gauge-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:5px;transition:width .4s;}
+.gauge-lbl{font-size:11px;color:var(--dim);display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;}
+.sig-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;letter-spacing:.03em;}
+.sig-pill.buy{background:rgba(0,208,132,.16);color:var(--green);}
+.sig-pill.watch{background:rgba(84,160,255,.14);color:var(--blue);}
+.sig-pill.wait{background:rgba(61,81,99,.25);color:var(--faint);}
+.rsibar{width:60px;height:5px;background:var(--panel2);border-radius:3px;display:inline-block;vertical-align:middle;margin-left:8px;overflow:hidden;}
+.rsibar i{display:block;height:100%;background:var(--yellow);}
 /* charts page */
 .chartwrap{display:flex;gap:14px;height:calc(100vh - 120px);}
 #wl{width:150px;flex-shrink:0;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;}
@@ -126,6 +140,7 @@ canvas{width:100%;display:block;}
     <div class="brand"><span class="mk">⬡</span><span class="nm">APEX</span></div>
     <div class="navitem on" data-p="overview" onclick="go('overview')"><span class="ic">◧</span><span class="t">Overview</span></div>
     <div class="navitem" data-p="trades" onclick="go('trades')"><span class="ic">⇄</span><span class="t">Trades</span></div>
+    <div class="navitem" data-p="advisor" onclick="go('advisor')"><span class="ic">✦</span><span class="t">Advisor</span></div>
     <div class="navitem" data-p="reports" onclick="go('reports')"><span class="ic">▤</span><span class="t">Reports</span></div>
     <div class="navitem" data-p="journal" onclick="go('journal')"><span class="ic">✎</span><span class="t">Journal</span></div>
     <div class="navitem" data-p="charts" onclick="go('charts')"><span class="ic">◊</span><span class="t">Charts</span></div>
@@ -166,6 +181,30 @@ canvas{width:100%;display:block;}
         <div class="card" style="padding:0;"><div id="closed-tbl"></div></div>
         <div class="sec-h">Raw Order Feed</div>
         <div class="card" style="padding:0;"><div id="feed-tbl"></div></div>
+      </div>
+
+      <!-- ADVISOR -->
+      <div class="page" id="p-advisor">
+        <div class="card adv-hero">
+          <div>
+            <div class="t">✦ RSI(2) Mean-Reversion Advisor</div>
+            <div class="d">A second, independent strategy — pure math, no chart patterns. Buys deep oversold dips (2-period RSI &lt; 10) only while the long-term trend is up (price above the 200-day average), sells once price snaps back (RSI &gt; 70). Runs once daily at 8:35am, separate universe from the ICT bot so they never compete. Backtested: 70&ndash;85% win rate across multiple 1&ndash;3yr windows.</div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge-lbl"><span>Capital in use</span><span id="adv-cap-txt">—</span></div>
+            <div class="gauge-bar"><div class="gauge-fill" id="adv-cap-fill" style="width:0%;"></div></div>
+            <div class="gauge-lbl"><span id="adv-cap-used">$0</span><span>cap $15,000</span></div>
+          </div>
+        </div>
+
+        <div class="sec-h">Live Signals <span class="mut" id="adv-updated" style="text-transform:none;letter-spacing:0;font-weight:400;"></span></div>
+        <div class="card" style="padding:0;"><div id="adv-signals"><div class="empty">Loading signals…</div></div></div>
+
+        <div class="sec-h">Advisor Positions</div>
+        <div class="card" style="padding:0;"><div id="adv-pos"></div></div>
+
+        <div class="sec-h">Advisor Trade History</div>
+        <div class="card" style="padding:0;"><div id="adv-trades"></div></div>
       </div>
 
       <!-- REPORTS -->
@@ -227,6 +266,12 @@ const state = { acct:null, pos:[], orders:[], closed:[] };
 
 const WL = ['IONQ','RGTI','QBTS','QUBT','ARQQ','IBM','SMR','NNE','LEU','BWXT','UUUU','DNN','UEC','RKLB','ASTS','LUNR','BA','JOBY','ACHR','PL','NVDA','PLTR','AI','MSFT','GOOGL','LMT','RTX','NOC','GD','KTOS','LHX','HII','LDOS','BAH','DRS','APP','BKSY','AXON','ORCL','TSLA','NBIS','RIOT','UPST','SOFI','NU','QCOM','SNOW','PLUG','RDDT','BE','WULF','NET','MARA','CRWD','KLAC','LRCX'];
 
+// RSI2 advisor — separate universe, never overlaps WL above (see strategy/rsi2.py)
+const RSI2_UNIVERSE = ['SPY','QQQ','DIA','IWM','AMZN','META','V','UNH','JNJ','KO','WMT','HD','DIS','COST','ADBE','CSCO','BAC','T'];
+const RSI2_CAP = 15000;
+const RSI2_CACHE_KEY = 'apex_rsi2_signals_v1';
+const RSI2_CACHE_TTL = 20 * 60 * 1000; // 20 min — daily-bar strategy, no need to hammer the API
+
 // ---- vault ----
 async function vault(action, extra){
   const r = await fetch(VAULT_URL,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -268,6 +313,7 @@ function go(p){
   document.getElementById('p-'+p).classList.add('on');
   if(p==='overview')drawCurve();
   if(p==='charts')loadChart(curSym);
+  if(p==='advisor')loadAdvisorSignals();
 }
 
 // ---- helpers ----
@@ -315,6 +361,78 @@ function computeClosed(orders){
 
 function renderAll(){
   renderKPIs();renderPositions();renderToday();renderClosed();renderFeed();renderReports();renderRecords();spcxAlert();drawCurve();
+  renderAdvisorPositions();renderAdvisorTrades();
+}
+
+// ---- RSI2 advisor: positions & trade history (filtered from the same account data) ----
+function renderAdvisorPositions(){
+  const list=state.pos.filter(p=>RSI2_UNIVERSE.includes(p.symbol));
+  const used=list.reduce((s,p)=>s+Math.abs(parseFloat(p.market_value)),0);
+  const pct=Math.min(100,used/RSI2_CAP*100);
+  const capFill=document.getElementById('adv-cap-fill'); if(capFill) capFill.style.width=pct.toFixed(1)+'%';
+  const capUsed=document.getElementById('adv-cap-used'); if(capUsed) capUsed.textContent=money0(used);
+  const capTxt=document.getElementById('adv-cap-txt'); if(capTxt) capTxt.textContent=pct.toFixed(0)+'% of cap';
+  const el=document.getElementById('adv-pos'); if(!el)return;
+  if(!list.length){el.innerHTML='<div class="empty">No open advisor positions right now.</div>';return;}
+  el.innerHTML=`<table><thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Now</th><th>Unrealized</th><th>%</th></tr></thead><tbody>`+
+    list.map(p=>{const u=parseFloat(p.unrealized_pl),pc=parseFloat(p.unrealized_plpc)*100;
+      return `<tr><td class="sym">${p.symbol}</td><td>${Math.abs(parseFloat(p.qty))}</td><td>${parseFloat(p.avg_entry_price).toFixed(2)}</td><td>${parseFloat(p.current_price).toFixed(2)}</td><td class="${cls(u)}">${signed(u)}</td><td class="${cls(u)}">${pc>=0?'+':''}${pc.toFixed(2)}%</td></tr>`;
+    }).join('')+`</tbody></table>`;
+}
+function renderAdvisorTrades(){
+  const f=state.orders.filter(o=>o.filled_at&&RSI2_UNIVERSE.includes(o.symbol)).slice(0,40);
+  const el=document.getElementById('adv-trades'); if(!el)return;
+  el.innerHTML=f.length?feedTable(f):'<div class="empty">No advisor trades recorded yet.</div>';
+}
+
+// ---- RSI2 advisor: live signal scan (client-side RSI2 + SMA200, cached + throttled) ----
+function sma(vals,n){const out=new Array(vals.length).fill(null);for(let i=n-1;i<vals.length;i++){let s=0;for(let j=i-n+1;j<=i;j++)s+=vals[j];out[i]=s/n;}return out;}
+function rsi2Series(cl){
+  const p=2; const out=new Array(cl.length).fill(null); if(cl.length<=p)return out;
+  let g=0,l=0; for(let i=1;i<=p;i++){const d=cl[i]-cl[i-1]; g+=Math.max(0,d); l+=Math.max(0,-d);}
+  let ag=g/p, al=l/p; out[p]=al?100-100/(1+ag/al):100;
+  for(let i=p+1;i<cl.length;i++){const d=cl[i]-cl[i-1]; ag=(ag*(p-1)+Math.max(0,d))/p; al=(al*(p-1)+Math.max(0,-d))/p; out[i]=al?100-100/(1+ag/al):100;}
+  return out;
+}
+async function loadAdvisorSignals(){
+  const cached=JSON.parse(localStorage.getItem(RSI2_CACHE_KEY)||'null');
+  if(cached && Date.now()-cached.ts < RSI2_CACHE_TTL){ renderAdvisorSignals(cached.rows, new Date(cached.ts)); return; }
+  const el=document.getElementById('adv-signals');
+  const rows=[];
+  for(let i=0;i<RSI2_UNIVERSE.length;i++){
+    const sym=RSI2_UNIVERSE[i];
+    el.innerHTML=`<div class="empty">Loading signals… (${i+1}/${RSI2_UNIVERSE.length})</div>`;
+    try{
+      const cs=await vault('candles',{symbol:sym,interval:'1day',outputsize:230});
+      if(cs && cs.values){
+        const closes=cs.values.slice().reverse().map(v=>+v.close);
+        const r2=rsi2Series(closes), s200=sma(closes,200);
+        const price=closes[closes.length-1], rv=r2[r2.length-1], sv=s200[s200.length-1];
+        rows.push({sym,price,rv,sv});
+      }
+    }catch(e){ rows.push({sym,error:true}); }
+    await new Promise(r=>setTimeout(r,300)); // stay well under API rate limits
+  }
+  localStorage.setItem(RSI2_CACHE_KEY, JSON.stringify({ts:Date.now(),rows}));
+  renderAdvisorSignals(rows, new Date());
+}
+function renderAdvisorSignals(rows, asOf){
+  const el=document.getElementById('adv-signals'); if(!el)return;
+  const upd=document.getElementById('adv-updated'); if(upd) upd.textContent='updated '+asOf.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const sorted=rows.slice().sort((a,b)=>(a.rv??999)-(b.rv??999));
+  el.innerHTML=`<table><thead><tr><th>Symbol</th><th>Price</th><th>RSI(2)</th><th>Trend</th><th>Signal</th></tr></thead><tbody>`+
+    sorted.map(r=>{
+      if(r.error||r.rv==null) return `<tr><td class="sym">${r.sym}</td><td colspan="4" class="mut">no data</td></tr>`;
+      const above=r.price>r.sv;
+      const buy=r.rv<10 && above;
+      const watch=!buy && r.rv<25 && above;
+      const pill=buy?'<span class="sig-pill buy">BUY</span>':watch?'<span class="sig-pill watch">WATCHING</span>':'<span class="sig-pill wait">WAIT</span>';
+      const barPct=Math.min(100,r.rv);
+      const barCol=buy?'var(--green)':watch?'var(--blue)':'var(--faint)';
+      return `<tr><td class="sym">${r.sym}</td><td>${r.price.toFixed(2)}</td>`+
+        `<td>${r.rv.toFixed(1)}<span class="rsibar"><i style="width:${barPct}%;background:${barCol};"></i></span></td>`+
+        `<td class="${above?'up':'dn'}">${above?'above SMA200':'below SMA200'}</td><td>${pill}</td></tr>`;
+    }).join('')+`</tbody></table>`;
 }
 
 // bot equity strips SPCX
